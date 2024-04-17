@@ -1,0 +1,11 @@
+# Ignore virtual environment folder
+venv/
+
+# Ignore logs directory
+logs/
+
+# Ignore data directory
+data/
+
+# Ignore Python compiled files
+src/__pycache__/
