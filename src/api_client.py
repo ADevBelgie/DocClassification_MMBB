@@ -10,24 +10,47 @@ import io
 import fitz  # PyMuPDF
 import textwrap
 
-def convert_pdf_to_images(pdf_path, save_dir):
-    doc = fitz.open(pdf_path)
+def convert_pdf_to_images(pdf_path, save_dir, max_pages=None):
+    """
+    Converts the given PDF into images and saves them in the specified directory.
+    Only the first `max_pages` pages are converted if `max_pages` is provided.
+
+    Parameters:
+        pdf_path (str): The file path to the PDF document.
+        save_dir (str): The directory where the images will be saved.
+        max_pages (int, optional): The maximum number of pages to convert.
+
+    Returns:
+        list: A list of PIL Image objects for the converted pages.
+    """
     images = []
-    base_filename = os.path.splitext(os.path.basename(pdf_path))[0]
-    save_subdir = os.path.join(save_dir, base_filename)  # Create a subdirectory for each PDF
-    os.makedirs(save_subdir, exist_ok=True)  # Ensure the directory exists
+    try:
+        # Open the PDF file
+        with fitz.open(pdf_path) as doc:
+            total_pages = len(doc)
+            num_pages = total_pages if max_pages is None else min(total_pages, max_pages)
+            
+            logging.info(f"Total pages in PDF: {total_pages}. Converting the first {num_pages} pages.")
 
-    for i, page in enumerate(doc):
-        pix = page.get_pixmap()
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        images.append(img)
+            base_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+            save_subdir = os.path.join(save_dir, base_filename)  # Create a subdirectory for each PDF
+            os.makedirs(save_subdir, exist_ok=True)  # Ensure the directory exists
 
-        # Save images locally
-        image_filename = f"{base_filename}_page_{i+1}.jpeg"
-        img.save(os.path.join(save_subdir, image_filename))
+            for i in range(num_pages):
+                page = doc[i]
+                pix = page.get_pixmap()
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                images.append(img)
+
+                # Save images locally
+                image_filename = f"{base_filename}_page_{i+1}.jpeg"
+                img.save(os.path.join(save_subdir, image_filename))
+
+    except Exception as e:
+        print(f"Failed to convert PDF to images due to: {str(e)}")
+        return []
 
     return images
-
 
 def encode_image_to_base64(image):
     try:
@@ -61,53 +84,100 @@ def exponential_backoff(retry_number):
     wait_time = min(max_delay, base_delay * (factor ** retry_number))
     return wait_time
 
-def classify_file(file_path):
+def process_file_for_api(file_path, save_directory):
+    """
+    Processes the file based on its type to prepare for API submission.
+    """
     media_type = get_media_type(file_path)
-    save_directory = "data/saved_images"  # Define where to save images within the data directory
-    os.makedirs(save_directory, exist_ok=True)  # Create directory if it doesn't exist
+    max_pages=4 # Limit to the first 4 images for processing
     if media_type == 'application/pdf':
-        images = convert_pdf_to_images(file_path, save_directory)
-        images = images[:4]
-        image_sources = [{
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/jpeg",  # assuming conversion to JPEG
-                "data": encode_image_to_base64(image) if image else None
-            }
-        } for image in images if encode_image_to_base64(image)]
-        logging.info(f"Attempting to send {len(image_sources)} images to the API.")
+        images = convert_pdf_to_images(file_path, save_directory, max_pages)
+        images = images[:max_pages]  
+        return [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": encode_image_to_base64(image)}} for image in images if image]
     elif media_type in ['image/jpeg', 'image/png']:
-        # Handle JPEG and PNG files directly
         try:
-            image_path = os.path.join(save_directory, os.path.basename(file_path))
+            final_image_path = os.path.join(save_directory, os.path.basename(file_path))
             with Image.open(file_path) as img:
-                # Convert PNG with alpha channel (RGBA) to RGB format for JPEG
                 if img.mode == 'RGBA':
                     img = img.convert('RGB')
-                img.save(image_path, format='JPEG')  # Save as JPEG
-            encoded_image = encode_image_to_base64(img)
-            if encoded_image:
-                image_sources = [{
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/jpeg",  # specify JPEG as we converted to JPEG
-                        "data": encoded_image
-                    }
-                }]
-            else:
-                logging.error(f"Failed to encode image for file: {file_path}")
-                return None, "Failed to encode image"
+                img.save(final_image_path, format='JPEG')  # Convert and save as JPEG
+            with Image.open(final_image_path) as saved_img:
+                return [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": encode_image_to_base64(saved_img)}}]
         except Exception as e:
             logging.error(f"Error processing image file {file_path}: {str(e)}")
-            return None, "Error in handling image file"
+            return []
     else:
         logging.warning(f"Unsupported file type for API processing: {file_path}")
-        return None, "Unsupported file type"
+        return []
 
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-    user_prompt = textwrap.dedent("""\
+def communicate_with_api(image_data, retry_limit=5):
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    client = anthropic.Anthropic(api_key=api_key)
+    user_prompt = create_api_prompt()
+
+    for attempt in range(retry_limit):
+        try:
+            response = client.messages.create(
+                model="claude-3-opus-20240229",
+                max_tokens=1000,
+                temperature=0,
+                system="You are an AI administrative assistant.",
+                messages=[{
+                    "role": "user",
+                    "content": [{"type": "text", "text": user_prompt}] + image_data
+                }]
+            )
+            # Log the full response object to inspect its structure
+            logging.info(f"API response received: {response.model_dump_json()}")  # Log the parsed JSON response
+            return parse_api_response(response.json())  # Assume response.json() returns a dictionary
+        except (RateLimitError, APIError) as e:
+            if not handle_api_error(e, attempt):
+                return None, "API communication failed after maximum retries"
+        except Exception as e:
+            logging.error(f"Unexpected error when communicating with API: {str(e)}")
+            return None, "Unexpected error in API communication"
+
+def classify_file(file_path):
+    """
+    Main function to classify a file by processing it and communicating with the API.
+    """
+    save_directory = "data/saved_images"
+    os.makedirs(save_directory, exist_ok=True)
+    absolute_file_path = os.path.abspath(file_path)  # Secure file path handling
+
+    image_data = process_file_for_api(absolute_file_path, save_directory)
+    if not image_data:
+        return None, "Failed to process image data or unsupported file type"
+
+    classification, response = communicate_with_api(image_data)
+    if classification:
+        return classification, response
+    else:
+        return None, "API communication failed or no valid response"
+
+def handle_api_error(e, attempt):
+    wait_time = exponential_backoff(attempt)
+    logging.error(f"Error communicating with API on attempt {attempt + 1}: {str(e)}")
+    time.sleep(wait_time)
+    if attempt >= 4:  # Last attempt
+        return False  # Indicates no more retries
+    return True
+
+def parse_api_response(response_data):
+    try:
+        if isinstance(response_data, str):
+            response_data = json.loads(response_data)
+
+        if 'content' in response_data and isinstance(response_data['content'], list) and response_data['content']:
+            content_text = response_data['content'][0].get('text', '')
+            content_data = json.loads(content_text)
+            return content_data.get('ContentType'), json.dumps(content_data)
+        return None, "Content field missing or improperly formatted"
+    except Exception as e:
+        return None, f"Failed to parse API response: {e}"
+
+def create_api_prompt():
+    return textwrap.dedent("""\
         You are an AI administrative assistant that is tasked with changing the file name
         in accordance with the content of the file. The current filename may not be accurate so make sure to check the content.
 
@@ -130,45 +200,3 @@ def classify_file(file_path):
 
         The images will likely contain French/Dutch/English.
     """)
-
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            message = client.messages.create(
-                model="claude-3-opus-20240229",
-                max_tokens=1000,
-                temperature=0,
-                system="You are an AI administrative assistant. You will be asked a question about documents and you will need to draw a conclusion with the information available to you.",
-                messages=[{
-                    "role": "user",
-                    "content": [{"type": "text", "text": user_prompt}] + image_sources
-                }]
-            )
-            logging.info(f"API Response: {message.content}")
-            # Parse the response
-            for item in message.content:
-                try:
-                    response_data = json.loads(item.text)
-                    if 'ContentType' in response_data:
-                        return response_data['ContentType'], json.dumps(response_data)
-                except json.JSONDecodeError:
-                    logging.error(f"JSON decoding failed for response: {item.text}")
-                    return None, "Failed to decode JSON"
-            return None, "No valid ContentType found"
-        except RateLimitError as e:
-            if e.status_code in [429, 500]:  # Retry on Too Many Requests or Internal Server Error
-                wait_time = exponential_backoff(attempt)
-                error_type = "Too Many Requests" if e.status_code == 429 else "Internal Server Error"
-                logging.info(f"Retrying request to /v1/messages, attempt #{attempt + 1}, in {wait_time} seconds due to {error_type}")
-                time.sleep(wait_time)
-            else:
-                logging.error(f"Error communicating with API: {str(e)}")
-                return None, f"API communication error: {str(e)}"
-        except APIError as e:  # Catching general API errors
-            logging.error(f"General API Error: {str(e)}")
-            return None, f"General API communication error: {str(e)}"
-        except Exception as e:
-            logging.error(f"Unhandled exception: {str(e)}")
-            return None, f"Unhandled API communication error: {str(e)}"
-
-    return None, "API request failed after retries"
