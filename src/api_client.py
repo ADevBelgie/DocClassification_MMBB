@@ -1,3 +1,9 @@
+"""
+This module, api_client.py, is responsible for all interactions with external APIs and includes functionalities for file transformations and data transmission. 
+It provides methods to convert PDF documents to images, encode images to base64 format, and communicate with external APIs for content classification. 
+The module includes error handling strategies such as exponential backoff to manage API rate limits and supports various file formats.
+"""
+
 import time
 import anthropic
 from anthropic import RateLimitError, APIError
@@ -12,16 +18,19 @@ import textwrap
 
 def convert_pdf_to_images(pdf_path, save_dir, max_pages=None):
     """
-    Converts the given PDF into images and saves them in the specified directory.
-    Only the first `max_pages` pages are converted if `max_pages` is provided.
+    Converts a PDF file to a series of images saved locally and returns these images as PIL Image objects. 
+    If 'max_pages' is specified, only the first 'max_pages' are converted; otherwise, all pages are processed.
 
-    Parameters:
-        pdf_path (str): The file path to the PDF document.
-        save_dir (str): The directory where the images will be saved.
-        max_pages (int, optional): The maximum number of pages to convert.
+    Args:
+        pdf_path (str): The path to the PDF file.
+        save_dir (str): The directory where converted images will be stored.
+        max_pages (int, optional): Maximum number of pages to convert.
 
     Returns:
-        list: A list of PIL Image objects for the converted pages.
+        List[Image]: A list of PIL Image objects of the converted pages.
+
+    Raises:
+        Exception: If PDF conversion fails, an exception is caught and an empty list is returned.
     """
     images = []
     try:
@@ -53,6 +62,18 @@ def convert_pdf_to_images(pdf_path, save_dir, max_pages=None):
     return images
 
 def encode_image_to_base64(image):
+    """
+    Encodes a PIL Image object to a base64 string.
+    
+    Parameters:
+        image (PIL.Image): Image object to be encoded.
+    
+    Returns:
+        str: Base64 encoded string of the image, or None if an error occurs.
+    
+    The image is first checked to ensure it is in RGB format. Images in RGBA format are
+    converted to RGB to ensure compatibility with JPEG format requirements.
+    """
     try:
         # Assuming 'image' is already a PIL Image object
         buffered = io.BytesIO()
@@ -111,6 +132,16 @@ def process_file_for_api(file_path, save_directory):
         return []
 
 def communicate_with_api(image_data, retry_limit=5):
+    """
+    Communicates with an external API to classify images, handling retries and rate limits.
+
+    Args:
+        image_data (list): Encoded image data ready for API submission.
+        retry_limit (int): Maximum number of retry attempts in case of API errors.
+
+    Returns:
+        Tuple[str, str]: A tuple containing the classification result and API response, or None and an error message if communication fails.
+    """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(api_key=api_key)
     user_prompt = create_api_prompt()
@@ -185,6 +216,7 @@ def create_api_prompt():
         Teleworking Agreement, Unclassified.
 
         To mark a file as a Rental/Mortgage contract it must contain at least 1 page from said contract.
+        A repayment table also counts as a Mortgage contract.
 
         For more context, if you see a payment being made (whether for rental or mortgage) you need to mark it as Contract Payment.
 
