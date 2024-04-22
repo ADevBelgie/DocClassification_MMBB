@@ -98,7 +98,7 @@ def get_media_type(image_path):
         return None
     
 def exponential_backoff(retry_number):
-    base_delay = 4   # Initial delay of 1 second
+    base_delay = 6   # Initial delay of 1 second
     factor = 2       # Doubling the wait time with each retry
     max_delay = 60   # Maximum delay capped at 60 seconds
 
@@ -212,11 +212,11 @@ def create_api_prompt():
         You are an AI administrative assistant that is tasked with changing the file name
         in accordance with the content of the file. The current filename may not be accurate so make sure to check the content.
 
-        The content type could be one of the following: Rental Contract, Mortgage Contract, Contract Payment,
-        Teleworking Agreement, Unclassified.
+        The content type could be one of the following: Rental_Contract, Mortgage_Contract, Contract_Payment,
+        Teleworking_Agreement, Repayment_Table, Unclassified.
 
         To mark a file as a Rental/Mortgage contract it must contain at least 1 page from said contract.
-        A repayment table also counts as a Mortgage contract.
+        A file should be classified as a Repayment Table if it almost exclusively contains a Repayment Table.
 
         For more context, if you see a payment being made (whether for rental or mortgage) you need to mark it as Contract Payment.
 
@@ -228,6 +228,7 @@ def create_api_prompt():
 
         {
             "ContentType": ""
+            
         }
 
         The images will likely contain French/Dutch/English.

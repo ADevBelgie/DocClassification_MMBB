@@ -125,7 +125,7 @@ def process_files(files, deals_found_path):
     logging.info(f"Process files: {files}")
     allowed_extensions = {'.png', '.jpg', '.jpeg', '.pdf'}
     # Use lowercase for all valid classifications for case-insensitive comparison
-    valid_classifications = {'rental contract', 'mortgage contract', 'contract payment', 'teleworking agreement', 'unclassified'}
+    valid_classifications = {'rental_contract', 'mortgage_contract', 'contract_payment', 'teleworking_agreement', 'repayment_table', 'unclassified'}
 
     for file_path in files:
         file_name = os.path.basename(file_path)
