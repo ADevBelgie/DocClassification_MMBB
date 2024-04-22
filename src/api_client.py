@@ -43,7 +43,7 @@ def check_ocr_confidence(image_path):
     confidences = [int(conf) for conf in ocr_result['conf'] if conf != '-1']
     average_confidence = sum(confidences) / len(confidences) if confidences else 0
     logging.info(f"Average OCR confidence: {average_confidence}")
-    return 'Good' if average_confidence >= 30 else 'Bad'  # Threshold can be adjusted
+    return 'Good' if average_confidence >= 21 else 'Bad'  # Threshold can be adjusted
 
 def check_image_quality(image_path):
     image = cv2.imread(image_path)
@@ -173,6 +173,7 @@ def process_file_for_api(file_path, save_directory):
     """
     Processes the file based on its type to prepare for API submission.
     """
+    logging.info(f"Start processing file: {file_path}")
     media_type = get_media_type(file_path)
     max_pages = 4  # Limit to the first 4 images for processing
 

@@ -6,7 +6,7 @@ This script handles user interactions, setup logging, and the high-level managem
 import os
 import logging
 import datetime
-from file_utils import write_to_file,find_deal_folders
+from file_utils import find_deal_folders
 from api_client import classify_file
 import json
 
@@ -166,9 +166,14 @@ def main():
         config = load_config()
         setup_logging(config['log_directory'])
         base_path = config['base_path']
+        base_path_accounts = config['base_path_accounts']
         deals_found_path = config['deals_found']
+        
 
         deals_info = find_deal_folders(base_path)
+        accounts_deals_info = find_deal_folders(base_path_accounts, is_account=True)
+        # Merge deals from base_path and base_path_accounts
+        deals_info.update(accounts_deals_info)
 
         # Write initial deal information to Deals_Found.txt
         with open(deals_found_path, 'w') as file:
