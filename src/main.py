@@ -144,7 +144,10 @@ def process_files(files, deals_found_path):
 
         classification, api_response = classify_file(file_path)
         # Convert classification to lowercase for case-insensitive comparison
-        if classification is None or classification.lower() not in valid_classifications:
+        if classification == 'Unclassified - Poor image quality' and api_response is None:
+            logging.info(f"File {file_path} classified as Unclassified because of poor image quality before sending to AI classification.")
+            classification = 'Unclassified'
+        elif classification is None or classification.lower() not in valid_classifications:
             status = "Skipped - Invalid or no classification"
             update_file_status(file_path, status, deals_found_path)
             logging.error(f"Skipped processing {file_path} due to invalid or missing classification: {api_response}")

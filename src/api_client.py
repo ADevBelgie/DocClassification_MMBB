@@ -12,9 +12,60 @@ import json
 import os
 import logging
 from PIL import Image
+import pytesseract
 import io
 import fitz  # PyMuPDF
 import textwrap
+import cv2
+import numpy as np
+
+def check_focus_measure(gray_image):
+    focus_measure = cv2.Laplacian(gray_image, cv2.CV_64F).var()
+    logging.info(f"Focus measure: {focus_measure}")
+    return 'Good' if focus_measure >= 100 else 'Bad'  # Assuming 100 is the threshold
+
+def check_histogram_spread(gray_image):
+    # Calculate histogram
+    hist = cv2.calcHist([gray_image], [0], None, [256], [0, 256])
+    # Normalize the histogram
+    hist_norm = hist.ravel() / hist.max()
+    # Calculate the spread using the coefficient of variation
+    hist_spread = np.std(hist_norm) / np.mean(hist_norm)
+    logging.info(f"Histogram spread: {hist_spread}")
+    return 'Good' if hist_spread > 0.5 else 'Bad'  # Threshold can be adjusted
+
+def check_ocr_confidence(image_path):
+    # Load the image with Pillow
+    image = Image.open(image_path)
+    # Perform OCR using Tesseract
+    ocr_result = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    # Calculate average confidence
+    confidences = [int(conf) for conf in ocr_result['conf'] if conf != '-1']
+    average_confidence = sum(confidences) / len(confidences) if confidences else 0
+    logging.info(f"Average OCR confidence: {average_confidence}")
+    return 'Good' if average_confidence >= 30 else 'Bad'  # Threshold can be adjusted
+
+def check_image_quality(image_path):
+    image = cv2.imread(image_path)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    focus = check_focus_measure(gray)
+    histogram = check_histogram_spread(gray)
+    ocr_confidence = check_ocr_confidence(image_path)
+    
+    results = {
+        "Focus Measure": focus,
+        "Histogram Spread": histogram,
+        "OCR Confidence": ocr_confidence
+    }
+    
+    logging.info(f"Image quality results: {results}")
+    
+    # Combine the results
+    if 'Bad' in results.values():
+        return 'Bad'
+    else:
+        return 'Good'
 
 def convert_pdf_to_images(pdf_path, save_dir, max_pages=None):
     """
@@ -96,7 +147,20 @@ def get_media_type(image_path):
         return 'application/pdf'
     else:
         return None
-    
+
+def save_image_as_jpeg(image, file_path):
+    """
+    Saves a PIL Image in JPEG format, converting RGBA to RGB if necessary.
+
+    Args:
+        image (PIL.Image): The image to be saved.
+        file_path (str): Full path where the image will be saved.
+    """
+    if image.mode == 'RGBA':
+        image = image.convert('RGB')
+    image.save(file_path, format='JPEG')
+
+
 def exponential_backoff(retry_number):
     base_delay = 6   # Initial delay of 1 second
     factor = 2       # Doubling the wait time with each retry
@@ -110,26 +174,46 @@ def process_file_for_api(file_path, save_directory):
     Processes the file based on its type to prepare for API submission.
     """
     media_type = get_media_type(file_path)
-    max_pages=4 # Limit to the first 4 images for processing
+    max_pages = 4  # Limit to the first 4 images for processing
+
     if media_type == 'application/pdf':
         images = convert_pdf_to_images(file_path, save_directory, max_pages)
-        images = images[:max_pages]  
-        return [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": encode_image_to_base64(image)}} for image in images if image]
+        images = images[:max_pages]
+        image_data = []
+        poor_quality_count = 0  # To track how many images are classified as poor quality
+
+        for index, image in enumerate(images):
+            final_image_path = os.path.join(save_directory, f"temp_image_{index}.jpeg")
+            save_image_as_jpeg(image, final_image_path)
+            quality = check_image_quality(final_image_path)
+            if quality == 'Bad':
+                logging.warning(f"Low quality PDF page found, this page will not be sent to the API")
+                poor_quality_count += 1
+            else:
+                image_data.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": encode_image_to_base64(image)}})
+
+        if poor_quality_count == len(images):
+            return "Unclassified - Poor image quality"
+        return image_data
+
     elif media_type in ['image/jpeg', 'image/png']:
         try:
             final_image_path = os.path.join(save_directory, os.path.basename(file_path))
             with Image.open(file_path) as img:
-                if img.mode == 'RGBA':
-                    img = img.convert('RGB')
-                img.save(final_image_path, format='JPEG')  # Convert and save as JPEG
-            with Image.open(final_image_path) as saved_img:
-                return [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": encode_image_to_base64(saved_img)}}]
+                save_image_as_jpeg(img, final_image_path)
+            quality = check_image_quality(final_image_path)
+            if quality == 'Bad':
+                return "Unclassified - Poor image quality"
+            else:
+                with Image.open(final_image_path) as saved_img:
+                    return [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": encode_image_to_base64(saved_img)}}]
         except Exception as e:
             logging.error(f"Error processing image file {file_path}: {str(e)}")
             return []
     else:
         logging.warning(f"Unsupported file type for API processing: {file_path}")
         return []
+
 
 def communicate_with_api(image_data, retry_limit=5):
     """
@@ -179,7 +263,9 @@ def classify_file(file_path):
     image_data = process_file_for_api(absolute_file_path, save_directory)
     if not image_data:
         return None, "Failed to process image data or unsupported file type"
-
+    elif image_data == 'Unclassified - Poor image quality':
+        return 'Unclassified - Poor image quality', None
+    
     classification, response = communicate_with_api(image_data)
     if classification:
         return classification, response
