@@ -1,7 +1,11 @@
 """
-main.py is the entry point for the file classification and renaming application. 
-It orchestrates the integration of functionalities from api_client.py and file_utils.py to process files. 
-This script handles user interactions, setup logging, and the high-level management of file processing tasks.
+main.py
+
+Serves as the entry point of the file classification and renaming application, coordinating
+the main functional components from api_client.py and file_utils.py. This script handles
+user interaction, setups logging, and manages file processing workflows, directing the flow
+of operations based on the configurations and user inputs. It handles the logging of processing
+results and directs file renaming based on API analyses.
 """
 import os
 import logging
@@ -11,18 +15,23 @@ from api_client import classify_file
 import json
 
 def load_config():
+    """
+    Loads the application configuration from a JSON file.
+
+    Returns:
+        dict: Configuration dictionary.
+    """
     with open('data/config.json', 'r') as config_file:
         return json.load(config_file)
 
 def setup_logging(log_directory):
     """
-    Configures the logging system to write logs to both the file and console.
+    Configures the logging for both file and console outputs.
     
     Parameters:
-        log_directory (str): Directory where log files will be stored.
-    
-    This setup includes a FileHandler for writing logs to a file, ensuring persistent records,
-    and a StreamHandler for printing logs to the console, providing immediate feedback during development.
+        log_directory (str): The directory where the log files are stored.
+        
+    This setup logs all critical operations, providing a dual logging mechanism for both file and console to assist during development and troubleshooting.
     """
     log_filename = datetime.datetime.now().strftime("Logs_%Y%m%d%H%M%S.log")
     log_path = os.path.join(log_directory, log_filename)
@@ -31,7 +40,16 @@ def setup_logging(log_directory):
 
 def rename_file(original_path, classification):
     """
-    Renames a file based on its classification, appending the classification to the file name.
+    Renames a file based on the classification received from the API.
+
+    Args:
+        original_path (str): The full path of the original file.
+        classification (str): Classification string that modifies the filename.
+
+    Returns: 
+        str: The new file path after renaming.
+
+    This function modifies the original filename by appending the classification result to its name before its extension. It also ensures that the new filename is unique within its directory by appending a counter if necessary.
     """
     try:
         directory, old_file_name = os.path.split(original_path)
@@ -52,9 +70,15 @@ def rename_file(original_path, classification):
 
 def update_file_status(file_path, status, deals_found_path, new_filename=None):
     """
-    Updates or appends the status of file processing in the Deals_Found.txt with proper file handling,
-    using only the filename and indenting it under the deal directory.
-    Includes the new filename in the log if the file was processed and renamed.
+    Updates the log of file processing statuses, noting changes or appending new entries.
+
+    Args:
+        file_path (str): Path of the file being updated.
+        status (str): The current status of the file ("Completed", "Skipped", etc.).
+        deals_found_path (str): Path to the log file where statuses are recorded.
+        new_filename (str, optional): The new filename if the file was renamed.
+
+    This function logs the status of a file processing task by either updating existing entries or appending new ones to a dedicated log file.
     """
     try:
         directory = os.path.dirname(file_path)
@@ -86,7 +110,14 @@ def update_file_status(file_path, status, deals_found_path, new_filename=None):
 
 def update_deal_status(deal_path, status, deals_found_path):
     """
-    Updates or appends the status of a deal directory in the Deals_Found.txt without removing existing file listings.
+    Updates or appends the status of a deal directory in the log file.
+
+    Args:
+        deal_path (str): Path of the deal directory.
+        status (str): Status to log ("Completed", "Empty").
+        deals_found_path (str): Path to the log file where deal statuses are recorded.
+
+    This function manages the status updates of entire directories in the deal-focused log, ensuring that processing milestones are properly recorded.
     """
     try:
         updated = False
@@ -114,13 +145,14 @@ def update_deal_status(deal_path, status, deals_found_path):
 
 def process_files(files, deals_found_path):
     """
-    Processes a list of files for classification and potentially renaming them based on the API's content analysis.
+    Processes a list of files for classification and optional renaming based on content analysis provided by the API.
 
     Args:
-        files (list): List of file paths to be processed.
+        files (list of str): List of file paths to process.
         deals_found_path (str): Path to the file where processing status is logged.
 
-    This function filters files based on their extensions and existing classifications, updates their status, and handles their renaming based on the API response.
+    This function filters files by extension and existing classification, updates their status,
+    and handles their renaming based on API responses. It logs all significant actions to facilitate tracking and review.
     """
     logging.info(f"Process files: {files}")
     allowed_extensions = {'.png', '.jpg', '.jpeg', '.pdf'}
@@ -162,6 +194,13 @@ def process_files(files, deals_found_path):
             logging.info(f"File renamed: {new_file_path}")
 
 def main():
+    """
+    The main function that orchestrates the file processing workflow.
+
+    It loads the configuration, sets up logging, finds deal folders, and processes files in batches
+    based on user input. The function keeps track of the processing status in the Deals_Found.txt file
+    and allows users to continue processing until all deals are completed or the user chooses to stop.
+    """
     try:    
         config = load_config()
         setup_logging(config['log_directory'])

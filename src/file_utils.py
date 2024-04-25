@@ -1,28 +1,43 @@
 """
-file_utils.py consists of utility functions for file operations including searching, reading, and writing files. 
-It supports the application by managing ambiguous filenames and logging them for reclassification, 
-and scanning directories to identify files and folders of interest for processing.
+file_utils.py
+
+This module provides utility functions focused on file system operations such as writing,
+reading, and searching through file paths. It supports file management tasks within the
+application by offering functionality to identify files requiring additional processing or
+reclassification, navigating the directory structure, and logging relevant data.
 """
 import os
 import re
 
 def write_to_file(file_list, filename):
     """
-    Scans through the directory tree starting at `base_path` for folders matching specific patterns and logs all file paths.
-    
-    Parameters:
-    base_path (str): The root directory to start scanning from.
-    
-    The function uses a regular expression to match directory names that indicate potential ambiguity in their contents.
-    This is useful for identifying files that may require further inspection or reclassification.
-    
-    Example folder patterns matched: '*- Housing Cost', '*- Home Mortgage', '*- Home rent'
+    Writes a list of file paths to a file.
+
+    Args:
+        file_list (List[str]): List of file paths to be written.
+        filename (str): Name of the file to write the file paths to.
     """
     with open(filename, 'w') as file:
         for file_path in file_list:
             file.write(file_path + '\n')
 
 def find_deal_folders(base_path, is_account=False):
+    """
+    Finds deal folders within a given base path that match specific patterns.
+
+    Args:
+        base_path (str): The root directory to start scanning from.
+        is_account (bool, optional): Indicates whether the base path is an account path. Defaults to False.
+
+    Returns:
+        dict: A dictionary where the keys are the full paths of the deal folders,
+              and the values are lists of file paths within each deal folder.
+
+    The function uses a regular expression to match directory names that indicate potential ambiguity in their contents.
+    This is useful for identifying files that may require further inspection or reclassification.
+
+    Example folder patterns matched: '*- Housing Cost', '*- Home Mortgage', '*- Home rent'
+    """
     deal_pattern = re.compile(r".*-( Housing Cost| Home rent| Home Mortgage Interest)$")
     deals_info = {}
 

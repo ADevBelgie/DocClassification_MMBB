@@ -1,7 +1,11 @@
 """
-This module, api_client.py, is responsible for all interactions with external APIs and includes functionalities for file transformations and data transmission. 
-It provides methods to convert PDF documents to images, encode images to base64 format, and communicate with external APIs for content classification. 
-The module includes error handling strategies such as exponential backoff to manage API rate limits and supports various file formats.
+api_client.py
+
+This module is dedicated to managing the communication and data transformation with external APIs.
+It includes functionalities for converting PDFs to images, performing image quality assessments,
+encoding images to base64, adjusting retries on API limit hits, and other necessary tasks
+to prepare and handle data for API interactions. It integrates robust error handling mechanisms
+to ensure reliable operation under various conditions.
 """
 
 import time
@@ -20,11 +24,29 @@ import cv2
 import numpy as np
 
 def check_focus_measure(gray_image):
+    """
+    Checks the focus measure of a grayscale image using the Laplacian variance method.
+
+    Args:
+        gray_image (numpy.ndarray): Grayscale image as a NumPy array.
+
+    Returns:
+        str: 'Good' if the focus measure is above the threshold, 'Bad' otherwise.
+    """
     focus_measure = cv2.Laplacian(gray_image, cv2.CV_64F).var()
     logging.info(f"Focus measure: {focus_measure}")
     return 'Good' if focus_measure >= 100 else 'Bad'  # Assuming 100 is the threshold
 
 def check_histogram_spread(gray_image):
+    """
+    Checks the histogram spread of a grayscale image using the coefficient of variation.
+
+    Args:
+        gray_image (numpy.ndarray): Grayscale image as a NumPy array.
+
+    Returns:
+        str: 'Good' if the histogram spread is above the threshold, 'Bad' otherwise.
+    """
     # Calculate histogram
     hist = cv2.calcHist([gray_image], [0], None, [256], [0, 256])
     # Normalize the histogram
@@ -35,6 +57,15 @@ def check_histogram_spread(gray_image):
     return 'Good' if hist_spread > 0.5 else 'Bad'  # Threshold can be adjusted
 
 def check_ocr_confidence(image_path):
+    """
+    Checks the OCR confidence of an image using Tesseract OCR.
+
+    Args:
+        image_path (str): Path to the image file.
+
+    Returns:
+        str: 'Good' if the average OCR confidence is above the threshold, 'Bad' otherwise.
+    """
     # Load the image with Pillow
     image = Image.open(image_path)
     # Perform OCR using Tesseract
@@ -43,9 +74,18 @@ def check_ocr_confidence(image_path):
     confidences = [int(conf) for conf in ocr_result['conf'] if conf != '-1']
     average_confidence = sum(confidences) / len(confidences) if confidences else 0
     logging.info(f"Average OCR confidence: {average_confidence}")
-    return 'Good' if average_confidence >= 21 else 'Bad'  # Threshold can be adjusted
+    return 'Good' if average_confidence >= 10 else 'Bad'  # Threshold can be adjusted
 
 def check_image_quality(image_path):
+    """
+    Checks the overall quality of an image based on focus measure, histogram spread, and OCR confidence.
+
+    Args:
+        image_path (str): Path to the image file.
+
+    Returns:
+        str: 'Good' if all quality measures are above their respective thresholds, 'Bad' otherwise.
+    """
     image = cv2.imread(image_path)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
@@ -69,19 +109,15 @@ def check_image_quality(image_path):
 
 def convert_pdf_to_images(pdf_path, save_dir, max_pages=None):
     """
-    Converts a PDF file to a series of images saved locally and returns these images as PIL Image objects. 
-    If 'max_pages' is specified, only the first 'max_pages' are converted; otherwise, all pages are processed.
+    Converts a PDF file to a series of images and saves them locally.
 
     Args:
         pdf_path (str): The path to the PDF file.
         save_dir (str): The directory where converted images will be stored.
-        max_pages (int, optional): Maximum number of pages to convert.
+        max_pages (int, optional): Maximum number of pages to convert. Defaults to None.
 
     Returns:
-        List[Image]: A list of PIL Image objects of the converted pages.
-
-    Raises:
-        Exception: If PDF conversion fails, an exception is caught and an empty list is returned.
+        List[PIL.Image]: A list of PIL Image objects of the converted pages.
     """
     images = []
     try:
@@ -115,15 +151,12 @@ def convert_pdf_to_images(pdf_path, save_dir, max_pages=None):
 def encode_image_to_base64(image):
     """
     Encodes a PIL Image object to a base64 string.
-    
-    Parameters:
+
+    Args:
         image (PIL.Image): Image object to be encoded.
-    
+
     Returns:
         str: Base64 encoded string of the image, or None if an error occurs.
-    
-    The image is first checked to ensure it is in RGB format. Images in RGBA format are
-    converted to RGB to ensure compatibility with JPEG format requirements.
     """
     try:
         # Assuming 'image' is already a PIL Image object
@@ -139,6 +172,15 @@ def encode_image_to_base64(image):
         return None
 
 def get_media_type(image_path):
+    """
+    Determines the media type (MIME type) based on the file extension.
+
+    Args:
+        image_path (str): Path to the image file.
+
+    Returns:
+        str: Media type (e.g., 'image/jpeg', 'image/png', 'application/pdf'), or None if unsupported.
+    """
     if image_path.lower().endswith(('.jpg', '.jpeg')):
         return 'image/jpeg'
     elif image_path.lower().endswith('.png'):
@@ -162,6 +204,15 @@ def save_image_as_jpeg(image, file_path):
 
 
 def exponential_backoff(retry_number):
+    """
+    Calculates the exponential backoff time based on the retry number.
+
+    Args:
+        retry_number (int): The current retry attempt number.
+
+    Returns:
+        float: The calculated wait time in seconds.
+    """
     base_delay = 6   # Initial delay of 1 second
     factor = 2       # Doubling the wait time with each retry
     max_delay = 60   # Maximum delay capped at 60 seconds
@@ -172,6 +223,14 @@ def exponential_backoff(retry_number):
 def process_file_for_api(file_path, save_directory):
     """
     Processes the file based on its type to prepare for API submission.
+
+    Args:
+        file_path (str): Path to the file to be processed.
+        save_directory (str): Directory where processed files will be saved.
+
+    Returns:
+        Union[List[dict], str]: A list of dictionaries containing image data ready for API submission,
+                                or a string indicating poor image quality or an empty list if processing fails.
     """
     logging.info(f"Start processing file: {file_path}")
     media_type = get_media_type(file_path)
@@ -225,7 +284,8 @@ def communicate_with_api(image_data, retry_limit=5):
         retry_limit (int): Maximum number of retry attempts in case of API errors.
 
     Returns:
-        Tuple[str, str]: A tuple containing the classification result and API response, or None and an error message if communication fails.
+        Tuple[str, str]: A tuple containing the classification result and API response,
+                         or None and an error message if communication fails.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(api_key=api_key)
@@ -256,6 +316,13 @@ def communicate_with_api(image_data, retry_limit=5):
 def classify_file(file_path):
     """
     Main function to classify a file by processing it and communicating with the API.
+
+    Args:
+        file_path (str): Path to the file to be classified.
+
+    Returns:
+        Tuple[str, str]: A tuple containing the classification result and API response,
+                         or None and an error message if classification fails.
     """
     save_directory = "data/saved_images"
     os.makedirs(save_directory, exist_ok=True)
@@ -274,6 +341,16 @@ def classify_file(file_path):
         return None, "API communication failed or no valid response"
 
 def handle_api_error(e, attempt):
+    """
+    Handles API errors by applying exponential backoff and logging the error.
+
+    Args:
+        e (Exception): The exception object representing the API error.
+        attempt (int): The current retry attempt number.
+
+    Returns:
+        bool: True if retrying should continue, False if the maximum number of retries is reached.
+    """
     wait_time = exponential_backoff(attempt)
     logging.error(f"Error communicating with API on attempt {attempt + 1}: {str(e)}")
     time.sleep(wait_time)
@@ -282,6 +359,16 @@ def handle_api_error(e, attempt):
     return True
 
 def parse_api_response(response_data):
+    """
+    Parses the API response data to extract the content type and JSON data.
+
+    Args:
+        response_data (Union[str, dict]): The API response data as a string or dictionary.
+
+    Returns:
+        Tuple[str, str]: A tuple containing the content type and JSON data,
+                         or None and an error message if parsing fails.
+    """
     try:
         if isinstance(response_data, str):
             response_data = json.loads(response_data)
@@ -295,6 +382,12 @@ def parse_api_response(response_data):
         return None, f"Failed to parse API response: {e}"
 
 def create_api_prompt():
+    """
+    Creates the API prompt for image classification.
+
+    Returns:
+        str: The API prompt as a string.
+    """
     return textwrap.dedent("""\
         You are an AI administrative assistant that is tasked with changing the file name
         in accordance with the content of the file. The current filename may not be accurate so make sure to check the content.
