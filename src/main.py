@@ -80,8 +80,8 @@ def update_file_status(file_path, status, deals_found_path, new_filename=None):
 
     This function logs the status of a file processing task by either updating existing entries or appending new ones to a dedicated log file.
     """
+    logging.info(f"Updating status for file: {file_path}, status: {status}, new_filename: {new_filename}")
     try:
-        directory = os.path.dirname(file_path)
         filename = os.path.basename(file_path)
         updated = False
         with open(deals_found_path, "r+") as file:
@@ -215,7 +215,7 @@ def main():
         deals_info.update(accounts_deals_info)
 
         # Write initial deal information to Deals_Found.txt
-        with open(deals_found_path, 'w') as file:
+        with open(deals_found_path, 'w', encoding='utf-8') as file:
             for deal, files in deals_info.items():
                 file.write(f"{deal}\n")
                 for f in files:

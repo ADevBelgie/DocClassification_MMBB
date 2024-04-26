@@ -22,6 +22,7 @@ import fitz  # PyMuPDF
 import textwrap
 import cv2
 import numpy as np
+import re
 
 def check_focus_measure(gray_image):
     """
@@ -232,7 +233,7 @@ def process_file_for_api(file_path, save_directory):
         Union[List[dict], str]: A list of dictionaries containing image data ready for API submission,
                                 or a string indicating poor image quality or an empty list if processing fails.
     """
-    logging.info(f"Start processing file: {file_path}")
+    logging.info(f"Start processing file: {os.path.basename(file_path)}")
     media_type = get_media_type(file_path)
     max_pages = 4  # Limit to the first 4 images for processing
 
@@ -305,7 +306,7 @@ def communicate_with_api(image_data, retry_limit=5):
             )
             # Log the full response object to inspect its structure
             logging.info(f"API response received: {response.model_dump_json()}")  # Log the parsed JSON response
-            return parse_api_response(response.json())  # Assume response.json() returns a dictionary
+            return parse_api_response(response.model_dump_json())  # Assume response.json() returns a dictionary
         except (RateLimitError, APIError) as e:
             if not handle_api_error(e, attempt):
                 return None, "API communication failed after maximum retries"
@@ -371,14 +372,21 @@ def parse_api_response(response_data):
     """
     try:
         if isinstance(response_data, str):
+            logging.info(f"Response data is string. Attempting to load as JSON: {response_data}")
             response_data = json.loads(response_data)
 
         if 'content' in response_data and isinstance(response_data['content'], list) and response_data['content']:
             content_text = response_data['content'][0].get('text', '')
-            content_data = json.loads(content_text)
+            logging.info(f"Extracted content text: {content_text}")
+            # Preprocess the content_text to remove any unwanted control characters
+            clean_content_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content_text)
+            # Now attempt to load the cleaned text as JSON
+            content_data = json.loads(clean_content_text)
+            logging.info(f"Extracted ContentType: {content_data.get('ContentType')}")
             return content_data.get('ContentType'), json.dumps(content_data)
         return None, "Content field missing or improperly formatted"
     except Exception as e:
+        logging.info(f"Failed to parse API response: {e}")
         return None, f"Failed to parse API response: {e}"
 
 def create_api_prompt():
@@ -390,26 +398,26 @@ def create_api_prompt():
     """
     return textwrap.dedent("""\
         You are an AI administrative assistant that is tasked with changing the file name
-        in accordance with the content of the file. The current filename may not be accurate so make sure to check the content.
-
+        in accordance with the content of the file. The current filename may not be accurate, so make sure to thoroughly review the content, paying close attention to the document title, parties involved, and key terms and clauses.
+        You are only given the first 1-4 pages of the document.
         The content type could be one of the following: Rental_Contract, Mortgage_Contract, Contract_Payment,
         Teleworking_Agreement, Repayment_Table, Unclassified.
+        Some information and rules:
+        - To mark a file as a Rental/Mortgage contract it must contain at least 1 page from said contract or contains information very similar to a contract(Lender, credit intermediary, Renter, Owner).
+        - Mortgage Contract: A legal agreement between a borrower and a lender where the borrower receives funds to purchase a property and agrees to pay back the loan over a period, typically with interest. The property serves as collateral for the loan.
+        - Rental Contract: A legal document that outlines the terms and conditions under which one party agrees to rent property owned by another party. It specifies rental payments, duration of the rental, and other terms such as maintenance responsibilities.
+        - Contract Payment: If you see a payment being made (whether for rental or mortgage) you need to mark it as Contract Payment.
+        there needs to be a bankstatement or some kind or a signed receipt.
+        - Teleworking Agreement: An agreement between an employer and an employee that outlines the terms under which the employee can work from locations other than the employer's office, often including home. It covers aspects like work hours, communication methods, and equipment usage.
+        - Repayment Table (Amortization Schedule): It almost exclusively contains a Mortgage Repayment Table (Principal, interest, etc).
+        - If the image doesn't seem to encapsulate the above, classify as Unclassified.
 
-        To mark a file as a Rental/Mortgage contract it must contain at least 1 page from said contract.
-        A file should be classified as a Repayment Table if it almost exclusively contains a Repayment Table.
-
-        For more context, if you see a payment being made (whether for rental or mortgage) you need to mark it as Contract Payment.
-
-        If the image doesn't seem to encapsulate the above, classify as Unclassified.
-
+        Your thought process should be a step-by-step analysis of the document's content, and you should only provide the conclusion about the content type at the end of your response.
         So you will put the content type in the value of ContentType.
-
         You will be responding to this message with JSON in the following format:
-
         {
+            "ThoughtProcess": "",
             "ContentType": ""
-            
         }
-
         The images will likely contain French/Dutch/English.
     """)
