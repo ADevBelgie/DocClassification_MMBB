@@ -84,7 +84,7 @@ def update_file_status(file_path, status, deals_found_path, new_filename=None):
     try:
         filename = os.path.basename(file_path)
         updated = False
-        with open(deals_found_path, "r+") as file:
+        with open(deals_found_path, "r+", encoding='utf-8') as file:
             lines = file.readlines()
             file.seek(0)
             for line in lines:
@@ -121,7 +121,7 @@ def update_deal_status(deal_path, status, deals_found_path):
     """
     try:
         updated = False
-        with open(deals_found_path, "r+") as file:
+        with open(deals_found_path, "r+", encoding='utf-8') as file:
             lines = file.readlines()
             file.seek(0)
             found_deal = False
@@ -158,6 +158,7 @@ def process_files(files, deals_found_path):
     allowed_extensions = {'.png', '.jpg', '.jpeg', '.pdf'}
     # Use lowercase for all valid classifications for case-insensitive comparison
     valid_classifications = {'rental_contract', 'mortgage_contract', 'contract_payment', 'teleworking_agreement', 'repayment_table', 'unclassified'}
+    non_modifiable_files = ["housing refund request", "housing refund modification", "year renewal"]
 
     for file_path in files:
         file_name = os.path.basename(file_path)
@@ -166,9 +167,12 @@ def process_files(files, deals_found_path):
         # Check if file is already classified
         already_classified = any(classification in file_name.lower() for classification in valid_classifications)
 
-        if already_classified or file_name in ["Housing_Refund_Request.pdf", "Housing_Refund_Modification.pdf"] or extension not in allowed_extensions:
+        # Check if the file name contains any of the non-modifiable file names
+        is_non_modifiable = any(non_modifiable_file.lower() in file_name.lower().replace("_", " ") for non_modifiable_file in non_modifiable_files)
+
+        if already_classified or is_non_modifiable or extension not in allowed_extensions:
             reason = "Already classified" if already_classified else (
-                "Not allowed to change" if file_name in ["Housing_Refund_Request.pdf", "Housing_Refund_Modification.pdf"] else "Unsupported file type"
+                "Not allowed to change" if is_non_modifiable else "Unsupported file type"
             )
             update_file_status(file_path, f"Skipped - {reason}", deals_found_path)
             logging.info(f"Skipped processing {file_path}: {reason}")

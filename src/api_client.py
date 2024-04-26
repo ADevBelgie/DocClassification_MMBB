@@ -298,7 +298,7 @@ def communicate_with_api(image_data, retry_limit=5):
                 model="claude-3-opus-20240229",
                 max_tokens=1000,
                 temperature=0,
-                system="You are an AI administrative assistant.",
+                system="You are an AI administrative assistant. You process documents in the context of the Belgian Mobility Budget.",
                 messages=[{
                     "role": "user",
                     "content": [{"type": "text", "text": user_prompt}] + image_data
