@@ -404,12 +404,11 @@ def create_api_prompt():
         Teleworking_Agreement, Repayment_Table, Unclassified.
         Some information and rules:
         - To mark a file as a Rental/Mortgage contract it must contain at least 1 page from said contract or contains information very similar to a contract(Lender, credit intermediary, Renter, Owner).
-        - Mortgage Contract: A legal agreement between a borrower and a lender where the borrower receives funds to purchase a property and agrees to pay back the loan over a period, typically with interest. The property serves as collateral for the loan.
-        - Rental Contract: A legal document that outlines the terms and conditions under which one party agrees to rent property owned by another party. It specifies rental payments, duration of the rental, and other terms such as maintenance responsibilities.
-        - Contract Payment: If you see a payment being made (whether for rental or mortgage) you need to mark it as Contract Payment.
-        there needs to be a bankstatement or some kind or a signed receipt.
-        - Teleworking Agreement: An agreement between an employer and an employee that outlines the terms under which the employee can work from locations other than the employer's office, often including home. It covers aspects like work hours, communication methods, and equipment usage.
-        - Repayment Table (Amortization Schedule): It almost exclusively contains a Mortgage Repayment Table (Principal, interest, etc).
+        - Mortgage Contract: A legal agreement between a borrower and a lender where the borrower receives funds to purchase a property and agrees to pay back the loan over a period, typically with interest. The property serves as collateral for the loan. The tax certificate of a loan should also be classified as a mortagage contract.
+        - Rental Contract: A legal document that outlines the terms and conditions under which one party agrees to rent property owned by another party. It specifies rental payments, duration of the rental, and other terms such as charges and maintenance responsibilities.
+        - Contract Payment: This is a description of a payment from one party to another in the form of a bank statement or a signed receipt. Key information is an amount, a date, a payment description or reference,  the receiving party and sometimes the paying party. If you see a payment being made (whether for rental or mortgage) you need to mark it as Contract Payment.
+        - Teleworking Agreement: An agreement between an employer and an employee that outlines the terms under which the employee can work from locations other than the employer's office. It can be any other address including employee's home. It covers aspects like amount of teleworking allowed, responsabilities, work hours, communication methods, and equipment usage.
+        - Repayment Table (Amortization Schedule): It almost exclusively contains a Mortgage Repayment Table (Principal, interest, total, etc).
         - If the image doesn't seem to encapsulate the above, classify as Unclassified.
 
         Your thought process should be a step-by-step analysis of the document's content, and you should only provide the conclusion about the content type at the end of your response.
@@ -420,4 +419,5 @@ def create_api_prompt():
             "ContentType": ""
         }
         The images will likely contain French/Dutch/English.
+        Your response will be parsed as JSON.
     """)
