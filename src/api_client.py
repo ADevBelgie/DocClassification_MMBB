@@ -411,7 +411,7 @@ def create_api_prompt():
         - Repayment Table (Amortization Schedule): It almost exclusively contains a Mortgage Repayment Table (Principal, interest, total, etc).
         - If the image doesn't seem to encapsulate the above, classify as Unclassified.
 
-        Your thought process should be a step-by-step analysis of the document's content, and you should only provide the conclusion about the content type at the end of your response.
+        Your thought process should be a step-by-step analysis of the document's content, start by stating facts and only draw a conclusion afterwards.
         So you will put the content type in the value of ContentType.
         You will be responding to this message with JSON in the following format:
         {
