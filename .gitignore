@@ -3,9 +3,11 @@ venv/
 
 # Ignore logs directory
 logs/
+test_logs/
 
 # Ignore data directory
 data/
 
 # Ignore Python compiled files
 src/__pycache__/
+tests/__pycache__/
