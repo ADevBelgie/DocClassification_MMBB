@@ -67,20 +67,21 @@ def rename_file(original_path, new_name):
 
     Args:
         original_path (str): The full path of the original file.
-        new_name (str): New filename that should be used (without path).
+        new_name (str): Classification string that will become the new filename.
 
     Returns:
         tuple: (bool, str) - (Success status, new path if successful or error message if failed)
     """
     try:
-        directory, old_file_name = os.path.split(original_path)
-        new_path = os.path.join(directory, new_name)
+        directory, _ = os.path.split(original_path)
+        _, extension = os.path.splitext(original_path)
+        new_base_name = new_name  # Use classification directly as the new name
+        new_path = os.path.join(directory, f"{new_base_name}{extension}")
         counter = 1
 
         # Handle duplicate filenames by appending a counter
         while os.path.exists(new_path):
-            base_name, extension = os.path.splitext(new_name)
-            new_path = os.path.join(directory, f"{base_name} ({counter}){extension}")
+            new_path = os.path.join(directory, f"{new_base_name} ({counter}){extension}")
             counter += 1
 
         os.rename(original_path, new_path)
@@ -95,7 +96,7 @@ def rename_file(original_path, new_name):
         error_msg = f"Unexpected error renaming {original_path}: {str(e)}"
         logging.error(error_msg)
         return False, error_msg
-    
+
 def validate_new_filename(filename):
     """
     Validates that a proposed filename meets required criteria.

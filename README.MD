@@ -5,6 +5,8 @@ Setup project:
    ```.\venv\Scripts\activate```
 3. Install project dependencies
    ```pip install -r requirements.txt```
+4. Setup data/config.json
+5. Setup environment variables
 
 Run tests:
 1. Ensure the virtual environment is activated

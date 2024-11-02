@@ -19,11 +19,7 @@ from .sql_utils import (
     check_duplicate_filename
 )
 from .file_utils import find_file_path, rename_file, validate_new_filename
-from .api_client import (
-    check_image_quality,
-    process_file_for_api,
-    communicate_with_api,
-)
+from .api_client import classify_file
 
 # Global lock for thread safety
 lock = threading.Lock()
@@ -83,29 +79,57 @@ def setup_logging(log_directory):
     
     logging.info(f"New logging session started at {datetime.now()}")
 
-def generate_new_filename(original_filename):
-    """
-    Generates a valid filename for ContractScanner_MMBB processing.
-    """
-    base_name = os.path.splitext(original_filename)[0]
-    extension = os.path.splitext(original_filename)[1]
-    
-    # Add 'Contract_Payment' if not present
-    if 'contract' not in base_name.lower() or 'payment' not in base_name.lower():
-        new_name = f"Contract_Payment_{base_name}{extension}"
-    else:
-        new_name = original_filename
-
-    return new_name
-
 def process_failed_record(conn, record):
     """
-    Processes a single failed record, attempting to rename and update its status.
+    Processes a single failed record, attempting to classify and rename it.
     """
     try:
         logging.info(f"Processing record {record.contract_payments_id}")
+
+        # Step 1: Define constants
+        allowed_extensions = {'.png', '.jpg', '.jpeg', '.pdf'}
+        valid_classifications = {
+            'Rental_Contract', 'Mortgage_Contract', 'Contract_Payment',
+            'Teleworking_Agreement', 'Repayment_Table', 'Unclassified'
+        }
+        non_modifiable_files = [
+        "housingrefundrequest",
+        "housingcostrefundrequest",
+        "housingrefundmodification",
+        "yearrenewal"
+        ]
+
+        # Step 2: Basic file validation
+        file_name = record.file_name
+        extension = os.path.splitext(file_name)[1].lower()
         
-        # First verify/find the file location
+        # Step 3: Check if file has valid extension
+        if extension not in allowed_extensions:
+            error_msg = "Unsupported file type"
+            logging.info(f"Skipping {file_name}: {error_msg}")
+            update_rename_failed(conn, record.contract_payments_id, error_msg)
+            return
+
+        # Step 4: Check if file is non-modifiable - using original logic
+        normalized_filename = file_name.lower().replace("_", "").replace(" ", "")
+        is_non_modifiable = any(non_modifiable_file.lower() in normalized_filename 
+                               for non_modifiable_file in non_modifiable_files)
+        
+        if is_non_modifiable:
+            error_msg = "Not allowed to change - protected filename"
+            logging.info(f"Skipping {file_name}: {error_msg}")
+            update_rename_failed(conn, record.contract_payments_id, error_msg)
+            return
+
+        # Step 5: Check if already classified
+        if any(classification.lower() in file_name.lower() 
+               for classification in valid_classifications):
+            error_msg = "Already classified"
+            logging.info(f"Skipping {file_name}: {error_msg}")
+            update_rename_failed(conn, record.contract_payments_id, error_msg)
+            return
+
+        # Step 6: Verify file location
         current_path = record.full_file_path
         if not os.path.exists(current_path):
             logging.info(f"File not found at {current_path}, searching for new location...")
@@ -117,25 +141,30 @@ def process_failed_record(conn, record):
                 return
             current_path = found_path
 
-        # Generate new filename
-        new_filename = generate_new_filename(record.file_name)
+        # Step 7: Process file through Claude API
+        save_directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
+                                    "..", "data", "saved_images")
+        os.makedirs(save_directory, exist_ok=True)
         
-        # Validate new filename
-        is_valid, error_msg = validate_new_filename(new_filename)
-        if not is_valid:
+        logging.info(f"Classifying file: {current_path}")
+        classification_result, api_response = classify_file(current_path)
+        
+        # Step 8: Handle classification results
+        if classification_result == "Unclassified - Poor image quality":
+            logging.info(f"File {file_name} classified as Unclassified due to poor image quality.")
+            classification_result = "Unclassified"
+        elif not classification_result or classification_result not in valid_classifications:
+            error_msg = f"Invalid or no classification received: {api_response}"
+            logging.error(f"Skipping {file_name}: {error_msg}")
             update_rename_failed(conn, record.contract_payments_id, error_msg)
             return
 
-        # Check for duplicates
-        if check_duplicate_filename(conn, new_filename, record.deal_id):
-            error_msg = f"Duplicate filename would be created: {new_filename}"
-            update_rename_failed(conn, record.contract_payments_id, error_msg)
-            return
+        logging.info(f"File classified as: {classification_result}")
 
-        # Attempt rename
-        success, result = rename_file(current_path, new_filename)
+        # Step 9: Rename file using classification
+        success, result = rename_file(current_path, classification_result)
         if success:
-            # Update database with new filename and path
+            new_filename = os.path.basename(result)
             update_renamed_record(conn, record.contract_payments_id, new_filename, result)
             logging.info(f"Successfully processed record {record.contract_payments_id}")
         else:
@@ -143,9 +172,9 @@ def process_failed_record(conn, record):
             logging.error(f"Failed to rename file for record {record.contract_payments_id}: {result}")
 
     except Exception as e:
-        error_msg = f"Error processing record {record.contract_payments_id}: {str(e)}"
-        logging.error(error_msg)
-        update_rename_failed(conn, record.contract_payments_id, str(e))
+        error_msg = str(e)
+        logging.error(f"Error processing record {record.contract_payments_id}: {error_msg}")
+        update_rename_failed(conn, record.contract_payments_id, error_msg)
 
 def main(lock_file='doc_classification.lock'):
     """
@@ -171,6 +200,7 @@ def main(lock_file='doc_classification.lock'):
             
             for record in failed_records:
                 process_failed_record(conn, record)
+                time.sleep(1)  # Small delay between records
                 
         finally:
             conn.close()

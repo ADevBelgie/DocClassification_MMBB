@@ -49,8 +49,14 @@ def get_failed_unprocessed_records(conn):
             WHERE status = 'Failed'
             AND has_been_renamed = 0
             AND failure_reason LIKE 'File pattern does not match%'
+            AND (
+                deal_name LIKE '% - Housing Cost'
+                OR deal_name LIKE '% - Home rent'
+                OR deal_name LIKE '% - Home Mortgage Interest'
+            )
             ORDER BY contract_payments_id
         """)
+        logging.info("Fetching failed records with housing-related deal patterns")
         return cursor.fetchall()
     finally:
         cursor.close()
@@ -72,7 +78,7 @@ def update_renamed_record(conn, payment_id, new_file_name, new_file_path):
         update_fields = {
             'file_name': new_file_name,
             'full_file_path': new_file_path,
-            'status': 'New',  # Reset to New for ContractScanner to process
+            'status': 'New_DocClassification',  # Reset to New for ContractScanner to process
             'has_been_renamed': True,
             'last_updated': datetime.now(),
             'failure_reason': None  # Clear the failure reason
@@ -107,20 +113,33 @@ def update_renamed_record(conn, payment_id, new_file_name, new_file_path):
 def update_rename_failed(conn, payment_id, error_message):
     """
     Updates a record when renaming operation fails.
-    
-    Args:
-        conn: Database connection object
-        payment_id: ID of the payment record
-        error_message: Description of what went wrong
+    Ensures the error message fits within the database column limits.
     """
     cursor = None
     try:
         cursor = conn.cursor()
         
+        # Get the actual column size (optional, could be hardcoded based on your schema)
+        cursor.execute("""
+            SELECT CHARACTER_MAXIMUM_LENGTH 
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_NAME = 'contract_payments' 
+            AND COLUMN_NAME = 'failure_reason'
+        """)
+        max_length = cursor.fetchone()[0] or 200  # Default to 200 if NULL
+        
+        # Prepare the error message to fit in the column
+        message_prefix = "Rename operation failed: "
+        available_length = max_length - len(message_prefix)
+        truncated_message = (error_message[:available_length] 
+                           if len(error_message) > available_length 
+                           else error_message)
+        final_message = message_prefix + truncated_message
+        
         update_fields = {
             'has_been_renamed': True,  # Mark as processed even though it failed
             'last_updated': datetime.now(),
-            'failure_reason': f"Rename operation failed: {error_message[:200]}"  # Limit message length
+            'failure_reason': final_message
         }
         
         fields = ', '.join([f"{k} = ?" for k in update_fields.keys()])
@@ -130,13 +149,12 @@ def update_rename_failed(conn, payment_id, error_message):
         
         cursor.execute(sql, values)
         conn.commit()
-        logging.warning(f"Updated record {payment_id} with rename failure: {error_message}")
-    
+        logging.info(f"Updated failure reason for record {payment_id}")
+        
     except Exception as e:
         conn.rollback()
         logging.error(f"Error updating rename failure for record {payment_id}: {str(e)}")
         raise
-    
     finally:
         if cursor:
             cursor.close()
