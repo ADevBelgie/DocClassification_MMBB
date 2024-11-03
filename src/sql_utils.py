@@ -78,7 +78,7 @@ def update_renamed_record(conn, payment_id, new_file_name, new_file_path):
         update_fields = {
             'file_name': new_file_name,
             'full_file_path': new_file_path,
-            'status': 'New_DocClassification',  # Reset to New for ContractScanner to process
+            'status': 'New',  # Reset to New for ContractScanner to process
             'has_been_renamed': True,
             'last_updated': datetime.now(),
             'failure_reason': None  # Clear the failure reason

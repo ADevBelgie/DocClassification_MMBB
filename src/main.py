@@ -90,13 +90,14 @@ def process_failed_record(conn, record):
         allowed_extensions = {'.png', '.jpg', '.jpeg', '.pdf'}
         valid_classifications = {
             'Rental_Contract', 'Mortgage_Contract', 'Contract_Payment',
-            'Teleworking_Agreement', 'Repayment_Table', 'Unclassified'
+            'Teleworking_Agreement', 'Repayment_Table', 'Unclassified', 'Telework_Agreement', 'Homecostrenewal'
         }
         non_modifiable_files = [
         "housingrefundrequest",
         "housingcostrefundrequest",
         "housingrefundmodification",
-        "yearrenewal"
+        "yearrenewal",
+        "mmbbform"
         ]
 
         # Step 2: Basic file validation
