@@ -122,7 +122,7 @@ def update_rename_failed(conn, payment_id, error_message):
         if not error_message or error_message.strip() == "":
             error_message = "Unknown error"
             
-        final_message = f"Rename operation failed: {error_message}"
+        final_message = f"Classification status: {error_message}"
         
         update_fields = {
             'has_been_renamed': True,
