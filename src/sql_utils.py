@@ -113,31 +113,19 @@ def update_renamed_record(conn, payment_id, new_file_name, new_file_path):
 def update_rename_failed(conn, payment_id, error_message):
     """
     Updates a record when renaming operation fails.
-    Ensures the error message fits within the database column limits.
     """
     cursor = None
     try:
         cursor = conn.cursor()
         
-        # Get the actual column size (optional, could be hardcoded based on your schema)
-        cursor.execute("""
-            SELECT CHARACTER_MAXIMUM_LENGTH 
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_NAME = 'contract_payments' 
-            AND COLUMN_NAME = 'failure_reason'
-        """)
-        max_length = cursor.fetchone()[0] or 200  # Default to 200 if NULL
-        
-        # Prepare the error message to fit in the column
-        message_prefix = "Rename operation failed: "
-        available_length = max_length - len(message_prefix)
-        truncated_message = (error_message[:available_length] 
-                           if len(error_message) > available_length 
-                           else error_message)
-        final_message = message_prefix + truncated_message
+        # Add check for empty error message
+        if not error_message or error_message.strip() == "":
+            error_message = "Unknown error"
+            
+        final_message = f"Rename operation failed: {error_message}"
         
         update_fields = {
-            'has_been_renamed': True,  # Mark as processed even though it failed
+            'has_been_renamed': True,
             'last_updated': datetime.now(),
             'failure_reason': final_message
         }
