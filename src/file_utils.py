@@ -10,53 +10,86 @@ import logging
 import subprocess
 import time
 
-def find_file_path(deal_name, file_name, max_retries=3, initial_delay=10):
+def find_file_path(deal_name: str, file_name: str, max_retries: int = 3, initial_delay: int = 10) -> str | None:
     """
     Finds the current file path using PowerShell script.
-    
+
     Args:
-        deal_name (str): Name of the deal folder
-        file_name (str): Name of the file to find
-        max_retries (int): Number of retries if file not found
-        initial_delay (int): Initial delay in seconds between retries
-        
+        deal_name: Name of the deal folder
+        file_name: Name of the file to find
+        max_retries: Number of retries if file not found
+        initial_delay: Initial delay in seconds between retries
+
     Returns:
         str: Full file path if found, None if not found
     """
     script_path = os.path.join('tools', 'findFilepath.ps1')
-    command = [
+    
+    # Handle special characters in parameters
+    escaped_file_name = f'"{file_name.replace('"', '`"')}"'
+    escaped_deal_name = f'"{deal_name.replace('"', '`"')}"'
+    
+    ps_command = [
         'powershell.exe',
+        '-NoProfile',
+        '-NonInteractive',
         '-ExecutionPolicy', 'Bypass',
-        '-File', script_path,
-        '-FileName', file_name,
-        '-FolderName', deal_name
+        '-Command',
+        f'& "{script_path}" -FileName {escaped_file_name} -FolderName {escaped_deal_name}'
     ]
+
+    logging.info(f"Searching for file: {file_name} in folder: {deal_name}")
 
     for attempt in range(max_retries):
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=True)
-            
-            # Process the output
-            for line in result.stdout.splitlines():
-                if line.startswith("RESULT:"):
-                    path = line.split("RESULT:", 1)[1].strip()
-                    if path != "NOT_FOUND" and os.path.exists(path):
-                        return path
-            
-            if attempt < max_retries - 1:
-                delay = initial_delay * (attempt + 1)
-                logging.info(f"File not found. Retrying in {delay} seconds...")
-                time.sleep(delay)
-            
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
-            if attempt < max_retries - 1:
-                delay = initial_delay * (attempt + 1)
-                logging.info(f"Command failed. Retrying in {delay} seconds...")
-                time.sleep(delay)
-                continue
-            else:
-                logging.error(f"Command failed after {max_retries} attempts")
+            if attempt > 0:
+                logging.info(f"Retry attempt {attempt + 1}/{max_retries}")
+                
+            result = subprocess.run(
+                ps_command,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+
+            # Log PowerShell errors if any
+            if result.stderr:
+                logging.error(f"PowerShell error: {result.stderr}")
+
+            # Check for PowerShell execution success
+            if result.returncode != 0:
+                logging.error(f"PowerShell execution failed with return code: {result.returncode}")
+                if attempt < max_retries - 1:
+                    time.sleep(initial_delay * (attempt + 1))
+                    continue
                 return None
+
+            # Process the output
+            if result.stdout:
+                for line in result.stdout.splitlines():
+                    if line.startswith("RESULT:"):
+                        path = line.split("RESULT:", 1)[1].strip()
+                        if path == "NOT_FOUND":
+                            logging.info("File not found in specified locations")
+                            break
+                        if os.path.exists(path):
+                            logging.info(f"Found file: {path}")
+                            return path
+                        else:
+                            logging.error(f"Found path doesn't exist: {path}")
+
+            if attempt < max_retries - 1:
+                delay = initial_delay * (attempt + 1)
+                logging.info(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+
+        except Exception as e:
+            logging.error(f"Error during file search: {str(e)}")
+            if attempt < max_retries - 1:
+                time.sleep(initial_delay * (attempt + 1))
+                continue
+            return None
 
     logging.error(f"Failed to find file after {max_retries} attempts")
     return None

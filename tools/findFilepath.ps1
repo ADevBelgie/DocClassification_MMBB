@@ -5,22 +5,39 @@ param(
     [string]$AccountsPath = "Z:\Zoho CRM\Accounts"
 )
 
+# Ensure consistent encoding
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 function Get-FlexibleFileName {
     param([string]$FileName)
-    # Replace colons with single character wildcard, but keep the rest specific
-    return $FileName -replace ':', '?'
+    # Handle common special characters while keeping pattern specific
+    return $FileName -replace ':', '?' `
+                    -replace '\[', '`[' `
+                    -replace '\]', '`]'
 }
 
 function Search-Folder {
     param([string]$FileName, [string]$FolderPath)
-    $flexibleFileName = Get-FlexibleFileName $FileName
+    if (-not (Test-Path -LiteralPath $FolderPath)) {
+        return $null
+    }
     
-    if (Test-Path $FolderPath) {
-        # Use -Filter for faster searching, no -Recurse
-        return Get-ChildItem -Path $FolderPath -Filter $flexibleFileName -File | 
+    # Try exact match first
+    $exactPath = Join-Path -Path $FolderPath -ChildPath $FileName
+    if (Test-Path -LiteralPath $exactPath) {
+        return $exactPath
+    }
+    
+    # Try flexible match
+    $flexibleFileName = Get-FlexibleFileName $FileName
+    try {
+        return Get-ChildItem -Path $FolderPath -Filter $flexibleFileName -File |
+               Sort-Object LastWriteTime -Descending |
                Select-Object -First 1 -ExpandProperty FullName
     }
-    return $null
+    catch {
+        return $null
+    }
 }
 
 function Search-DealsFolder {
@@ -31,34 +48,31 @@ function Search-DealsFolder {
 
 function Search-AccountsFolder {
     param([string]$FileName, [string]$FolderName, [string]$AccountsPath)
-    foreach ($company in Get-ChildItem -Path $AccountsPath -Directory) {
-        $companyPath = Join-Path -Path $company.FullName -ChildPath "Associated Deals"
-        $fullPath = Join-Path -Path $companyPath -ChildPath $FolderName
-        $result = Search-Folder -FileName $FileName -FolderPath $fullPath
-        if ($result) { return $result }
+    if (-not (Test-Path -LiteralPath $AccountsPath)) {
+        return $null
+    }
+    
+    try {
+        foreach ($company in Get-ChildItem -Path $AccountsPath -Directory -ErrorAction Stop) {
+            $fullPath = Join-Path -Path (Join-Path -Path $company.FullName -ChildPath "Associated Deals") -ChildPath $FolderName
+            $result = Search-Folder -FileName $FileName -FolderPath $fullPath
+            if ($result) { return $result }
+        }
+    }
+    catch {
+        return $null
     }
     return $null
 }
 
-Write-Host "Searching for file: $FileName"
-Write-Host "In folder: $FolderName"
-Write-Host "Locations to search: $DealsPath, $AccountsPath"
-
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
-
+# Main execution
 $result = Search-DealsFolder -FileName $FileName -FolderName $FolderName -DealsPath $DealsPath
 if (-not $result) {
     $result = Search-AccountsFolder -FileName $FileName -FolderName $FolderName -AccountsPath $AccountsPath
 }
 
-$sw.Stop()
-
 if ($result) {
-    Write-Host "File found: $result"
     Write-Host "RESULT:$result"
 } else {
-    Write-Host "File not found in any of the specified locations."
     Write-Host "RESULT:NOT_FOUND"
 }
-
-Write-Host "Search completed in $($sw.Elapsed.TotalSeconds) seconds."
