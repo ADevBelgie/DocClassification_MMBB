@@ -295,7 +295,7 @@ def communicate_with_api(image_data, retry_limit=5):
     for attempt in range(retry_limit):
         try:
             response = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-7-sonnet-20250219",
                 max_tokens=1500,
                 temperature=0,
                 system="You are an AI administrative assistant. You process documents in the context of the Belgian Mobility Budget.",
